@@ -47,7 +47,7 @@ int main(void)
         oss << "Cam" << cams[n].id;
         cams[n].window = oss.str();
 
-        cv::namedWindow(cams[n].window, CV_WINDOW_AUTOSIZE);
+        cv::namedWindow(cams[n].window, cv::WINDOW_AUTOSIZE);
 
         std::cout << "  Cam " << cams[n].id  << ": " <<
             cams[n].width << "x" <<
@@ -59,7 +59,7 @@ int main(void)
     for(i = 0; i < 10; i++) {
         for (int n = 0; n < 2; n++) {
             cv::Mat *grayframe = get_frame_from_camera(cams[n].id);
-            cvtColor(*grayframe, cams[n].frame, CV_GRAY2RGB);
+            cvtColor(*grayframe, cams[n].frame, cv::COLOR_GRAY2BGR);
             delete grayframe;
 
             markers[n] = get_markers_from_camera(cams[n].id);

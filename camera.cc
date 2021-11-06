@@ -4,10 +4,27 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/opencv.hpp>
+#include <opencv2/aruco.hpp>
 #include <pthread.h>
 #include <vector>
 #include <iostream>
 #include <stdexcept>
+
+namespace {
+const char* about = "Detect ArUco marker images";
+const char* keys  =
+        "{d        |16    | dictionary: DICT_4X4_50=0, DICT_4X4_100=1, "
+        "DICT_4X4_250=2, DICT_4X4_1000=3, DICT_5X5_50=4, DICT_5X5_100=5, "
+        "DICT_5X5_250=6, DICT_5X5_1000=7, DICT_6X6_50=8, DICT_6X6_100=9, "
+        "DICT_6X6_250=10, DICT_6X6_1000=11, DICT_7X7_50=12, DICT_7X7_100=13, "
+        "DICT_7X7_250=14, DICT_7X7_1000=15, DICT_ARUCO_ORIGINAL = 16}"
+        "{h        |false | Print help }"
+        "{v        |<none>| Custom video source, otherwise '0' }"
+        ;
+}
+
+
 
 Camera::Camera(int id_cam, int width, int height, double wc_height, double wc_offset_x,
 double wc_offset_y, double wc_offset_angle) :
@@ -91,29 +108,40 @@ void Camera::set_expected_num_of_markers(int n)
     _expected_num_of_markers = n;
 }
 
+class pixel{//se utiliza para guardar las cuatro esquinas.
+public:
+    float x;
+    float y;
+    pixel *next;
+
+  
+};
+
+
+
+
 void* Camera::_localization_algorithm(void)
 {
+   
     cv::VideoCapture cap(_id_cam);
     if(!cap.isOpened()) {
         std::cerr << "Camera " << _id_cam << 
             " is already in use" << std::endl;
         pthread_exit(0);
     }
-    cap.set(CV_CAP_PROP_FRAME_WIDTH, _width);
-    cap.set(CV_CAP_PROP_FRAME_HEIGHT, _height);
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, _width);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, _height);
 
     cv::Mat frame;
 
-    DmtxImage      *img;
-    DmtxDecode     *dec;
-    DmtxRegion     *reg;
-    DmtxMessage    *msg;
-    DmtxTime        timeout;
-
+    int dictionaryId = 16;
     int smth_detected = 0;
-
+    cv::Ptr<cv::aruco::Dictionary> dictionary =
+        cv::aruco::getPredefinedDictionary( \
+        cv::aruco::PREDEFINED_DICTIONARY_NAME(dictionaryId));
+   
     for(;;){
-
+        
         if(_stop_workerTh)
             pthread_exit(0);
 
@@ -122,78 +150,87 @@ void* Camera::_localization_algorithm(void)
         cap >> frame;
 
         pthread_mutex_lock(&_mutexFrame);
-        cvtColor(frame, _greyMat, CV_BGR2GRAY);
+        cvtColor(frame, _greyMat, cv::COLOR_BGR2GRAY);
         pthread_mutex_unlock(&_mutexFrame);
+        cap.retrieve(frame);
+       
+        std::vector<int> ids;
+        std::vector<std::vector<cv::Point2f>> corners;
+        
 
-        uint8_t *pxl = (uint8_t*)_greyMat.data;
-        img = dmtxImageCreate(pxl, _width, _height, DmtxPack8bppK);
-
-        dec = dmtxDecodeCreate(img, 1);
-        dmtxDecodeSetProp(dec, DmtxPropSymbolSize, DmtxSymbol10x10);
-
-        int i;
-        for(i = 0; i < _expected_num_of_markers; i++){
-            // If the algorithm does not find any marker in 100ms, it skips the frame
-            timeout = dmtxTimeAdd(dmtxTimeNow(), 100);
-            reg = dmtxRegionFindNext(dec, &timeout);
-
-            if(reg != NULL) {
-                msg = dmtxDecodeMatrixRegion(dec, reg, DmtxUndefined);
-
-                if(msg != NULL) {
-                    smth_detected = 1;
-                    Marker marker;
-                    // ID of the robot
-                    marker.id = 
-                        std::atoi((reinterpret_cast<char*>(msg->output)));
-
-                    // Intersection of the two solid borders, in pixels
-                    DmtxVector2 p00, p10, p11, p01;
-                    p00.X = p00.Y = p10.Y = p01.X = 0.0;
-                    p10.X = p01.Y = p11.X = p11.Y = 1.0;
-
-                    dmtxMatrix3VMultiplyBy(&p00, reg->fit2raw);
-                    dmtxMatrix3VMultiplyBy(&p10, reg->fit2raw);
-                    dmtxMatrix3VMultiplyBy(&p11, reg->fit2raw);
-                    dmtxMatrix3VMultiplyBy(&p01, reg->fit2raw);
-
-                    marker.cam_corner_posX = p00.X;
-                    marker.cam_corner_posY = p00.Y;
-
-                    uint16_t cx1 = (p10.X - p00.X)/2 + p00.X;
-                    uint16_t cx2 = (p11.X - p01.X)/2 + p01.X;
-                    uint16_t cy1 = (p01.Y - p00.Y)/2 + p00.Y;
-                    uint16_t cy2 = (p11.Y - p10.Y)/2 + p10.Y;
-
-                    marker.cam_center_posX = (cx1 + cx2)/2;
-                    marker.cam_center_posY = (cy1 + cy2)/2;
-
-                    // Angle in degress, w.r.t. the horizontal,
-                    // of the bottom solid border, counter-clockwise
-                    marker.cam_heading = atan2(p10.Y - p00.Y, p10.X - p00.X);
-
-                    marker.wc_corner_posX = marker.cam_corner_posX*_cos_a/_resolution +
-                            marker.cam_corner_posY*_sin_a/_resolution + _wc_offset_x;
-                    marker.wc_corner_posY = -marker.cam_corner_posX*_sin_a/_resolution +
-                            marker.cam_corner_posY*_cos_a/_resolution + _wc_offset_y;
-
-                    marker.wc_center_posX = marker.cam_center_posX*_cos_a/_resolution +
-                            marker.cam_center_posY*_sin_a/_resolution + _wc_offset_x;
-                    marker.wc_center_posY = -marker.cam_center_posX*_sin_a/_resolution +
-                            marker.cam_center_posY*_cos_a/_resolution + _wc_offset_y;
-
-                    marker.wc_heading = marker.cam_heading - _wc_offset_angle;
-
-                    local_markers.push_back(marker);
-
-                    dmtxMessageDestroy(&msg);
+        
+        cv::aruco::detectMarkers(frame, dictionary, corners, ids);
+		std::vector<std::vector<cv::Point2f>>::iterator row;
+        std::vector<cv::Point2f>::iterator col;
+                pixel p00;
+                pixel p10;
+                pixel p01;
+                pixel p11;
+                pixel *p=NULL;
+                p=new pixel();
+                p00.next=&p10;
+                p10.next=&p01;
+                p01.next=&p11;
+                p11.next=NULL;
+                p=&p00;
+        // If at least one marker detected
+        if ( ids.size()> 0)
+        {
+            
+            cv::aruco::drawDetectedMarkers(_greyMat, corners, ids);
+			//std::cout << corners.at(0).at(0).x<<std::endl;
+            for(row=corners.begin(); row != corners.end();row++ )//hasta que ya no haya mas markers
+            {   
+                Marker marker;
+                
+                for(col=row->begin(); col != row->end();col++){
+                    //hay que hacer una lista      
+                    p->x=col->x;
+                    p->y=col->y;
+                    p=p->next;
+                    
                 }
-                dmtxRegionDestroy(&reg);
-            }else break;
-        }
+                marker.id=reinterpret_cast<int>(ids.at(0));
+                smth_detected = 1;
+                marker.cam_corner_posX = static_cast<int>(p00.x);
+                marker.cam_corner_posY = static_cast<int>(p00.y);
 
-        dmtxImageDestroy(&img);
-        dmtxDecodeDestroy(&dec);
+                uint16_t cx1 =static_cast<int> ((p10.x - p00.x)/2 + p00.x);
+                uint16_t cx2 =static_cast<int> ((p11.x - p01.x)/2 + p01.x);
+                uint16_t cy1 =static_cast<int> ((p01.y - p00.y)/2 + p00.y);
+                uint16_t cy2 =static_cast<int> ((p11.y - p10.y)/2 + p10.y);
+
+                marker.cam_center_posX = (cx1 + cx2)/2;
+                marker.cam_center_posY = (cy1 + cy2)/2;
+
+                // Angle in degress, w.r.t. the horizontal,
+                // of the bottom solid border, counter-clockwise
+                marker.cam_heading = atan2(p10.y - p00.y, p10.x - p00.x);
+
+                marker.wc_corner_posX = marker.cam_corner_posX*_cos_a/_resolution +
+                        marker.cam_corner_posY*_sin_a/_resolution + _wc_offset_x;
+                marker.wc_corner_posY = -marker.cam_corner_posX*_sin_a/_resolution +
+                        marker.cam_corner_posY*_cos_a/_resolution + _wc_offset_y;
+
+                marker.wc_center_posX = marker.cam_center_posX*_cos_a/_resolution +
+                        marker.cam_center_posY*_sin_a/_resolution + _wc_offset_x;
+                marker.wc_center_posY = -marker.cam_center_posX*_sin_a/_resolution +
+                        marker.cam_center_posY*_cos_a/_resolution + _wc_offset_y;
+
+                marker.wc_heading = marker.cam_heading - _wc_offset_angle;
+
+                local_markers.push_back(marker);
+            }
+           
+           
+        }
+        
+        
+        imshow("Detected markers", _greyMat);
+        
+        char key = (char)cv::waitKey(10);
+        if (key == 27)
+            break;
         
         if(smth_detected)
         {

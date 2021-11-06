@@ -1,20 +1,11 @@
 <Camera>
-	<ID>0</ID>
-	<Width>1280</Width>
-	<Height>720</Height>
-	<WCHeight>720</WCHeight>
-	<WCOffX>0</WCOffX>
-	<WCOffY>0</WCOffY>
-	<WCOffAngle>0</WCOffAngle>
-</Camera>
-
-<Camera>
-	<ID>1</ID>
-	<Width>1280</Width>
-	<Height>720</Height>
-	<WCHeight>724.464</WCHeight>
+	<ID>"http://192.168.1.2:8080/?action=stream%22"</ID>
+	<Width>640</Width>
+	<Height>480</Height>
+	<WCHeight>480</WCHeight>
 	<WCOffX>-5.19784</WCOffX>
 	<WCOffY>622.574</WCOffY>
 	<WCOffAngle>-0.0131421</WCOffAngle>
 </Camera>
+
 

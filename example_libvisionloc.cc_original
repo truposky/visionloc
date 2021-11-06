@@ -22,12 +22,12 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    int nm = std::atoi(argv[1]);//marker
+    int nm = std::atoi(argv[1]);
 
     std::vector<Marker> markers;
     int tag;
 
-    start_visionloc(); //xml camaras
+    start_visionloc();
 
     std::vector<int> cam_ids = get_active_cameras();
 
@@ -62,7 +62,6 @@ int main(int argc, char* argv[])
             markers = get_markers_from_camera(cams[n].id);
             tag = get_tag(cams[n].id);
             std::cout << "Num of markers recognized on camera " << cams[n].id << ": " << markers.size();
-           
             if (markers.size())
                 std::cout << ", tag " << tag;
             std::cout << std::endl;

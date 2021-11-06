@@ -16,7 +16,7 @@ int main(int argc, char** argv)
 
     std::string nm(argv[2]);
     int numOfMarkers = atoi(nm.c_str());
-    cv::Mat image = cv::imread(argv[1], CV_LOAD_IMAGE_GRAYSCALE);
+    cv::Mat image = cv::imread(argv[1], cv::ImreadModes::IMREAD_GRAYSCALE);
 
     DmtxImage      *img;
     DmtxDecode     *dec;
